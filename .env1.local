@@ -1,5 +1,0 @@
-FIRECRAWL_KEY="fc-1627d96a634c4a27a7e77641f9569aed"
-# If you want to use your self-hosted Firecrawl, add the following below:
-# FIRECRAWL_BASE_URL="http://localhost:3002"
-
-OPENAI_KEY="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"

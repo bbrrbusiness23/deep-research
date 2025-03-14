@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
-import * as readline from 'readline';
-
+import express from 'express';
+import bodyParser from 'body-parser';
 import { getModel } from './ai/providers';
 import {
   deepResearch,
@@ -9,113 +9,93 @@ import {
 } from './deep-research';
 import { generateFeedback } from './feedback';
 
-// Helper function for consistent logging
-function log(...args: any[]) {
-  console.log(...args);
-}
+// Create an Express app
+const app = express();
+// Use the port that Render gives us, or use 10000 if nothing is given
+const port = process.env.PORT || 10000;
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout,
+// Tell our app to read form data (like when you fill out a form on a webpage)
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+
+// This is what you see when you visit the homepage ("/")
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>Deep Research</h1>
+    <form method="POST" action="/research">
+      <label>What would you like to research?</label><br/>
+      <input type="text" name="query" required /><br/><br/>
+      
+      <label>Enter research breadth (default 4):</label><br/>
+      <input type="number" name="breadth" value="4" /><br/><br/>
+      
+      <label>Enter research depth (default 2):</label><br/>
+      <input type="number" name="depth" value="2" /><br/><br/>
+      
+      <label>Mode (report or answer, default report):</label><br/>
+      <input type="text" name="mode" value="report" /><br/><br/>
+      
+      <button type="submit">Start Research</button>
+    </form>
+  `);
 });
 
-// Helper function to get user input
-function askQuestion(query: string): Promise<string> {
-  return new Promise(resolve => {
-    rl.question(query, answer => {
-      resolve(answer);
-    });
-  });
-}
-
-// run the agent
-async function run() {
-  console.log('Using model: ', getModel().modelId);
-
-  // Get initial query
-  const initialQuery = await askQuestion('What would you like to research? ');
-
-  // Get breath and depth parameters
-  const breadth =
-    parseInt(
-      await askQuestion(
-        'Enter research breadth (recommended 2-10, default 4): ',
-      ),
-      10,
-    ) || 4;
-  const depth =
-    parseInt(
-      await askQuestion('Enter research depth (recommended 1-5, default 2): '),
-      10,
-    ) || 2;
-  const reportAnswer = await askQuestion(
-    'Do you want to generate a long report or a specific answer? (report/answer, default report): ',
-  );
-  const isReport =
-    reportAnswer === '' || reportAnswer.toLowerCase() === 'report';
+// When you click the button, the form sends data to this URL (/research)
+app.post('/research', async (req, res) => {
+  // Get what the user typed in the form
+  const initialQuery = req.body.query;
+  const breadth = parseInt(req.body.breadth, 10) || 4;
+  const depth = parseInt(req.body.depth, 10) || 2;
+  const mode = req.body.mode && req.body.mode.trim().toLowerCase() === 'answer' ? 'answer' : 'report';
 
   let combinedQuery = initialQuery;
-  if (isReport) {
-    log(`Creating research plan...`);
+  // (Optionally: You could add follow-up questions here if needed.)
 
-    // Generate follow-up questions
-    const followUpQuestions = await generateFeedback({
-      query: initialQuery,
+  console.log('Using model:', getModel().modelId);
+  console.log('Starting research...');
+
+  try {
+    // Run the deep research process
+    const { learnings, visitedUrls } = await deepResearch({
+      query: combinedQuery,
+      breadth,
+      depth,
     });
 
-    log(
-      '\nTo better understand your research needs, please answer these follow-up questions:',
-    );
-
-    // Collect answers to follow-up questions
-    const answers: string[] = [];
-    for (const question of followUpQuestions) {
-      const answer = await askQuestion(`\n${question}\nYour answer: `);
-      answers.push(answer);
+    let outputHtml = '';
+    if (mode === 'report') {
+      // Create a full report
+      const report = await writeFinalReport({
+        prompt: combinedQuery,
+        learnings,
+        visitedUrls,
+      });
+      // Save the report to a file
+      await fs.writeFile('report.md', report, 'utf-8');
+      outputHtml = `<h2>Final Report</h2><pre>${report}</pre>`;
+    } else {
+      // Create a short answer
+      const answer = await writeFinalAnswer({
+        prompt: combinedQuery,
+        learnings,
+      });
+      await fs.writeFile('answer.md', answer, 'utf-8');
+      outputHtml = `<h2>Final Answer</h2><pre>${answer}</pre>`;
     }
 
-    // Combine all information for deep research
-    combinedQuery = `
-Initial Query: ${initialQuery}
-Follow-up Questions and Answers:
-${followUpQuestions.map((q: string, i: number) => `Q: ${q}\nA: ${answers[i]}`).join('\n')}
-`;
+    // Send the result back to your web browser
+    res.send(`
+      <h1>Research Completed</h1>
+      ${outputHtml}
+      <br/><a href="/">Back to Form</a>
+    `);
+  } catch (error: any) {
+    console.error(error);
+    res.status(500).send(`<h1>Error occurred</h1><p>${error.message}</p>`);
   }
+});
 
-  log('\nStarting research...\n');
-
-  const { learnings, visitedUrls } = await deepResearch({
-    query: combinedQuery,
-    breadth,
-    depth,
-  });
-
-  log(`\n\nLearnings:\n\n${learnings.join('\n')}`);
-  log(`\n\nVisited URLs (${visitedUrls.length}):\n\n${visitedUrls.join('\n')}`);
-  log('Writing final report...');
-
-  if (isReport) {
-    const report = await writeFinalReport({
-      prompt: combinedQuery,
-      learnings,
-      visitedUrls,
-    });
-
-    await fs.writeFile('report.md', report, 'utf-8');
-    console.log(`\n\nFinal Report:\n\n${report}`);
-    console.log('\nReport has been saved to report.md');
-  } else {
-    const answer = await writeFinalAnswer({
-      prompt: combinedQuery,
-      learnings,
-    });
-
-    await fs.writeFile('answer.md', answer, 'utf-8');
-    console.log(`\n\nFinal Answer:\n\n${answer}`);
-    console.log('\nAnswer has been saved to answer.md');
-  }
-
-  rl.close();
-}
-
-run().catch(console.error);
+// Tell our app to start listening for web traffic on the chosen port
+app.listen(port, () => {
+  console.log(`Server is listening on port ${port}`);
+});
