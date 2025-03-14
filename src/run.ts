@@ -23,3 +23,10 @@ app.get('/', (req, res) => {
   res.send(`
     <h1>Deep Research</h1>
     <form method="POST" action="/research">
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Server is listening on port ${port}`);
+  });
+}
+    
+export default app;
