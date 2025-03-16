@@ -91,11 +91,10 @@ app.post('/research', async (req, res) => {
 });
 
 // When testing at home, start the server (this won't run on Vercel)
-if (process.env.NODE_ENV !== 'production') {
-  app.listen(port, () => {
-    console.log(`Server is listening on port ${port}`);
-  });
-}
+app.listen(port, () => {
+  console.log(`Server is listening on port ${port}`);
+});
+
 
 // Export a handler function for Vercel (this is like giving Vercel the door key)
 export default function handler(req, res) {
