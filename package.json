@@ -1,13 +1,14 @@
 {
   "name": "open-deep-research",
   "version": "0.0.1",
-  "main": "index.ts",
+  "main": "src/run.ts",
   "scripts": {
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "tsx": "tsx --env-file=.env.local",
     "start": "tsx --env-file=.env.local src/run.ts",
     "api": "tsx --env-file=.env.local src/api.ts",
     "docker": "tsx src/run.ts",
+    "vercel": "vercel dev",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
@@ -21,8 +22,9 @@
     "@types/node": "^22.13.0",
     "@types/uuid": "^9.0.8",
     "prettier": "^3.4.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.3"
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vercel": "^28.0.0"
   },
   "dependencies": {
     "@ai-sdk/fireworks": "^0.1.14",
@@ -30,10 +32,12 @@
     "@mendable/firecrawl-js": "^1.16.0",
     "ai": "^4.1.17",
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.18.3",
     "js-tiktoken": "^1.0.17",
     "lodash-es": "^4.17.21",
     "p-limit": "^6.2.0",
+    "together-ai": "^0.13.0",
     "uuid": "^9.0.1",
     "zod": "^3.24.1"
   },

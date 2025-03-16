@@ -1,3 +1,4 @@
+import Together from "together-ai";
 import { createFireworks } from '@ai-sdk/fireworks';
 import { createOpenAI } from '@ai-sdk/openai';
 import {
@@ -6,10 +7,9 @@ import {
   wrapLanguageModel,
 } from 'ai';
 import { getEncoding } from 'js-tiktoken';
-
 import { RecursiveCharacterTextSplitter } from './text-splitter';
 
-// Providers
+// Providers for OpenAI and Fireworks
 const openai = process.env.OPENAI_KEY
   ? createOpenAI({
       apiKey: process.env.OPENAI_KEY,
@@ -29,8 +29,36 @@ const customModel = process.env.CUSTOM_MODEL
     })
   : undefined;
 
-// Models
+// Together Model Provider
+const together = new Together({
+  apiKey: process.env.TOGETHER_API_KEY, // Make sure this is set in your .env.local if needed
+});
 
+// Define the Together model with a supported default mode ("text")
+const togetherModel: LanguageModelV1 = {
+  modelId: "Together-Llama-3.3-70B-Instruct-Turbo-Free",
+  defaultObjectGenerationMode: 'text',  // Use 'text' mode for Together
+  async generate(messages, options) {
+    const response = await together.chat.completions.create({
+      messages,
+      model: "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+      max_tokens: options?.max_tokens || null,
+      temperature: options?.temperature || 0.7,
+      top_p: options?.top_p || 0.7,
+      top_k: options?.top_k || 50,
+      repetition_penalty: options?.repetition_penalty || 1,
+      stop: options?.stop || ["<|eot_id|>", "<|eom_id|>"],
+      stream: false,
+    });
+    let result = '';
+    for await (const token of response) {
+      result += token.choices[0]?.delta?.content || '';
+    }
+    return result;
+  }
+};
+
+// Models for other providers
 const o3MiniModel = openai?.('o3-mini', {
   reasoningEffort: 'medium',
   structuredOutputs: true,
@@ -38,30 +66,30 @@ const o3MiniModel = openai?.('o3-mini', {
 
 const deepSeekR1Model = fireworks
   ? wrapLanguageModel({
-      model: fireworks(
-        'accounts/fireworks/models/deepseek-r1',
-      ) as LanguageModelV1,
+      model: fireworks('accounts/fireworks/models/deepseek-r1') as LanguageModelV1,
       middleware: extractReasoningMiddleware({ tagName: 'think' }),
     })
   : undefined;
 
+// getModel selects the appropriate model based on environment variables
 export function getModel(): LanguageModelV1 {
+  if (process.env.USE_TOGETHER === 'true') {
+    return togetherModel;
+  }
   if (customModel) {
     return customModel;
   }
-
   const model = deepSeekR1Model ?? o3MiniModel;
   if (!model) {
     throw new Error('No model found');
   }
-
   return model as LanguageModelV1;
 }
 
 const MinChunkSize = 140;
 const encoder = getEncoding('o200k_base');
 
-// trim prompt to maximum context size
+// Function to trim a prompt so it fits within the context size
 export function trimPrompt(
   prompt: string,
   contextSize = Number(process.env.CONTEXT_SIZE) || 128_000,
@@ -76,7 +104,6 @@ export function trimPrompt(
   }
 
   const overflowTokens = length - contextSize;
-  // on average it's 3 characters per token, so multiply by 3 to get a rough estimate of the number of characters
   const chunkSize = prompt.length - overflowTokens * 3;
   if (chunkSize < MinChunkSize) {
     return prompt.slice(0, MinChunkSize);
@@ -88,11 +115,9 @@ export function trimPrompt(
   });
   const trimmedPrompt = splitter.splitText(prompt)[0] ?? '';
 
-  // last catch, there's a chance that the trimmed prompt is same length as the original prompt, due to how tokens are split & innerworkings of the splitter, handle this case by just doing a hard cut
   if (trimmedPrompt.length === prompt.length) {
     return trimPrompt(prompt.slice(0, chunkSize), contextSize);
   }
 
-  // recursively trim until the prompt is within the context size
   return trimPrompt(trimmedPrompt, contextSize);
 }
